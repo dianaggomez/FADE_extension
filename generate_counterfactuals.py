@@ -1,5 +1,3 @@
-
-
 def VAE():
     """ Implementation of CLAIRE VAE """
     pass
