@@ -41,3 +41,11 @@ Run `FADE.py` to train the observable and counterfactual models. This file will 
 
 ```bash
 python FADE.py
+```
+
+### Generate Counterfactuals
+Use `generate_counterfactuals.py` to create counterfactual data for fairness evaluation:.
+
+```bash
+python generate_counterfactuals.py
+```
