@@ -3,14 +3,15 @@ import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
-from generate_counterfactuals import *
+
+from src.generate_counterfactuals import *
+
 
 def load_data():
-    column_names = [
-    'age', 'workclass', 'fnlwgt', 'education', 'education_num', 
-    'marital_status', 'occupation', 'relationship', 'race', 
-    'sex', 'capital_gain', 'capital_loss', 'hours_per_week', 
-    'native_country', 'income']
+    column_names = ['age', 'workclass', 'fnlwgt', 'education', 'education_num', 
+                    'marital_status', 'occupation', 'relationship', 'race', 
+                    'sex', 'capital_gain', 'capital_loss', 'hours_per_week', 
+                    'native_country', 'income']
     
     train_url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data'
     train_data = pd.read_csv(train_url, names=column_names, sep=',', skipinitialspace=True)
@@ -43,6 +44,7 @@ def evaluate_counterfactual_fairness(orig_predictions, cf_predictions):
     
     return cf_fairness_score
 
+
 if __name__ == "__main__":
     train_data, test_data = load_data()
     
@@ -53,7 +55,6 @@ if __name__ == "__main__":
     
     # Generate counterfactuals
     counterfactuals = simulation()
-    
     
     # train(model, train_data, labels, counterfactuals, cf_labels)
     
