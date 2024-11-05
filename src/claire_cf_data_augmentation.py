@@ -1,5 +1,5 @@
 """
-VAE-based counterfactually fair data augmentation module from CLAIRE.
+VAE-based counterfactual data augmentation module from CLAIRE.
 """
 import numpy as np
 import torch
@@ -40,8 +40,10 @@ class Decoder(nn.Module):
         hs = torch.cat([h, s], dim=1)
         z = self.activation(self.fc1(hs))
         xy_recon = self.fc2(z)
-        return xy_recon
-    
+        x_recon = xy_recon[:, :-1]
+        y_recon = xy_recon[:, -1].unsqueeze(1)  
+        return x_recon, y_recon
+
 
 class VAE(nn.Module):
     def __init__(self, input_dim: int, latent_dim: int, hidden_dim: int = 32) -> None:
@@ -52,7 +54,8 @@ class VAE(nn.Module):
     def forward(self, x, y, s):
         mu, logvar = self.encoder(x, y)
         h = self.reparameterize(mu, logvar)  # sample from the latent space in a differentiable way
-        return self.decoder(h, s), mu, logvar, h
+        x_recon, y_recon = self.decoder(h, s)
+        return x_recon, y_recon, mu, logvar, h
     
     def reparameterize(self, mu, logvar):
         """
@@ -69,7 +72,7 @@ class VAE(nn.Module):
             return mu
 
     
-def vae_loss(xy_true, xy_recon, mu, logvar, kld_weight=1.0):
+def vae_loss(x_true, y_true, x_recon, y_recon, mu, logvar, kld_weight=1.0):
     """
     Compute the total VAE loss, which consists of two components:
         1. Reconstruction loss: Measures how well the decoder reconstructs {X,Y} from the 
@@ -78,20 +81,23 @@ def vae_loss(xy_true, xy_recon, mu, logvar, kld_weight=1.0):
             a standard normal distribution N(0,I).
     
     Args:
-        xy_true: Original input data {X,Y}
-        xy_recon: Reconstructed data from decoder
+        x_true, y_true: Original input data {X,Y}
+        x_recon, y_recon: Reconstructed data from decoder
         mu: Mean of latent distribution from encoder
         logvar: Log variance of latent distribution from encoder
     
     Returns:
         Total VAE loss combining reconstruction and KL divergence.
     """
-    # Reconstruction loss, averaged over batch
-    recon_loss = F.mse_loss(xy_recon, xy_true, reduction='mean')
+    # Reconstruction loss for continuous features X (MSE), averaged over batch 
+    recon_loss_x = F.mse_loss(x_recon, x_true, reduction='mean')
+    # Reconstruction loss for binary target Y (Sigmoid + Binary Cross-Entropy), averaged over batch 
+    recon_loss_y = F.binary_cross_entropy_with_logits(y_recon, y_true, reduction='mean')
+    # Total reconstruction loss, averaged over batch 
+    recon_loss = recon_loss_x + recon_loss_y
     
     # KL divergence loss, summed over latent dimensions and averaged over batch
-    kld_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1)
-    kld_loss = kld_loss.mean()
+    kld_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1).mean()
     
     return recon_loss + kld_weight * kld_loss
 
@@ -182,17 +188,17 @@ def train(model: VAE, train_dataloader: DataLoader, num_epochs: int = 100, learn
         with tqdm(train_dataloader, unit="batches") as itr:
             for step, (X_batch, Y_batch, S_batch) in enumerate(itr, start=step + 1):
                 X_batch, Y_batch, S_batch = \
-                    X_batch.to(device).float(), Y_batch.to(device).float(), S_batch.to(device)
+                    X_batch.to(device).float(), Y_batch.to(device).float(), S_batch.to(device).float()
                 
                 # Zero out the gradients before passing in a new batch
                 optimizer.zero_grad()
                 
                 # Forward pass (get reconstructed input and latent embeddings)
-                XY_recon, mu, logvar, H_batch = model.forward(X_batch, Y_batch, S_batch)
+                X_recon, Y_recon, mu, logvar, H_batch = \
+                    model.forward(X_batch, Y_batch, S_batch)
                 
                 # Compute VAE loss
-                loss_vae = vae_loss(torch.cat([X_batch, Y_batch], dim=1), XY_recon, 
-                                    mu, logvar, kld_weight)
+                loss_vae = vae_loss(X_batch, Y_batch, X_recon, Y_recon, mu, logvar, kld_weight)
                 
                 sensitive_groups = torch.unique(S_batch)
                 embeddings_by_group = {}
@@ -268,15 +274,14 @@ class CounterfactualDataGenerator:
                 H_k = H_samples[k]  # shape: (batch_size, latent_dim)
                 
                 # Decode {H_k, s} -> {X_k^CF, Y_k^CF}
-                XY_recon = self.vae.decoder(H_k.float(), S.float())
+                X_recon, Y_recon = self.vae.decoder(H_k.float(), S.float())
                 
-                # Split reconstructed output into X and Y components, assuming last column is Y
-                X_decoded.append(XY_recon[:, :-1])
-                Y_decoded.append(XY_recon[:, -1].unsqueeze(1))
+                X_decoded.append(X_recon)
+                Y_decoded.append((torch.sigmoid(Y_recon) > 0.5).float())  # Binarize Y
             
             # Aggregate (mean) over K samples to get counterfactuals
             X_CF_s[s] = torch.mean(torch.stack(X_decoded), dim=0).cpu().detach().numpy()
-            Y_CF_s[s] = torch.mean(torch.stack(Y_decoded), dim=0).cpu().detach().numpy()
+            Y_CF_s[s] = (torch.mean(torch.stack(Y_decoded), dim=0) > 0.5).float().cpu().detach().numpy()
 
         return X_CF_s, Y_CF_s
 

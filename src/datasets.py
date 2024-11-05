@@ -5,7 +5,7 @@ import pandas as pd
 from torch.utils.data import Dataset
 
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../data")
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
 
 class IncomeDataset(Dataset):
     BASE_DIR = os.path.join(DATA_DIR, "adult")
