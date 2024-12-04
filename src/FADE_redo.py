@@ -303,6 +303,71 @@ def eval_model(data, protected, phihat, phibarhat, base_predictions, betahats,
 
     return out
 
+##############
+## Plotting ##
+##############
+
+def plot_one_constraint(results, fairness=['rate_diff', 'cFPR_diff', 'cFNR_diff'],
+                        error='error_mse', palette='deep'):
+    colors = sns.color_palette(palette)
+    constraints = ['independence', 'cFPR', 'cFNR']
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    cols = ['lambda_' + cc for cc in constraints]
+    to_replace = {col: 0 for col in cols}
+    for i, ax in enumerate(axes):
+        curr_constraint = constraints[i]
+        curr_col = 'lambda_' + curr_constraint
+        other_cols = ['lambda_' +
+                      cc for cc in constraints if cc != curr_constraint]
+        res = results.loc[results[other_cols[0]].eq(
+            0) & results[other_cols[1]].eq(0)]
+        res = res.replace(to_replace, 0.0001).reset_index().drop(
+            columns='index')
+        ax.plot(res[curr_col], res[error], color=colors[0], linestyle=':', linewidth=2, alpha=0.5)
+        constraint_dict = {
+            'independence': 'rate_diff',
+            'cFPR': 'cFPR_diff',
+            'cFNR': 'cFNR_diff'
+        }
+        for j, ff in enumerate(fairness):
+            if ff == constraint_dict[curr_constraint]:
+                ax.plot(res[curr_col], res[ff], color=colors[j + 1], linewidth=2)
+            else:
+                ax.plot(res[curr_col], res[ff], color=colors[j + 1], linestyle=':', linewidth=2, alpha=0.5)
+
+#         # Vertical line for best lambda
+#         ax.vlines(res.loc[np.argmin(res[fairness[i]]), curr_col], *ax.get_ylim(),
+#                   color=colors[i + 1], linestyle='--')
+        res = res.rename(columns={'error_mse': 'MSE', 'rate_diff': 'rate-diff',
+                                 'cFPR_diff': 'FPR-diff', 'cFNR_diff': 'FNR-diff'})
+        res = res.drop(other_cols, axis=1)
+#         res = res[[curr_col] + [error] + fairness].melt([curr_col])
+        res = res[[curr_col] + ['MSE', 'rate-diff', 'FPR-diff', 'FNR-diff']].melt([curr_col])
+        ymax = np.max(res['value'])
+        if i == 0:
+            sns.scatterplot(x=curr_col, y='value', hue='variable', ci=None, data=res, ax=ax,
+                            palette=palette, legend=False)
+            ax.set_title('rate-diff penalty')
+        elif i == 1:
+            sns.scatterplot(x=curr_col, y='value', hue='variable', ci=None, data=res, ax=ax,
+                            palette=palette, legend=False)
+            ax.get_yaxis().set_visible(False)
+            ax.set_title('FPR-diff penalty')
+        elif i == 2:
+            s = sns.scatterplot(x=curr_col, y='value', hue='variable', ci=None, data=res, ax=ax,
+                            palette=palette)
+#             s.legend(['MSE', 'rate-diff', 'FPR-diff', 'FNR-diff'])
+            ax.set_title('FNR-diff penalty')
+            ax.get_yaxis().set_visible(False)
+            plt.legend(bbox_to_anchor=(1.01, 1))
+        ax.set(xscale='log')
+        ax.set_ylim((0, ymax*1.1))
+        ax.set_xlabel(r'$\lambda$')
+    plt.subplots_adjust(wspace=0.1, hspace=0.1)
+    plt.tight_layout()
+
+    return fig, axes
+
 #####################################################################################
 ############################ End of Helper Functions ################################
 #####################################################################################
@@ -385,7 +450,7 @@ nuisance_predictions = predict_nuis(
 # View nuisance predictions
 print(nuisance_predictions.head())
 
-# 4. Combine nuisance predictions and basis matrix for fairness optimization
+# Combine nuisance predictions and basis matrix for fairness optimization
 # Need to first get Q0, ghats. lambdas
 # Compute Q0
 n = Z.shape[0]  
@@ -429,7 +494,7 @@ phihat = nuisance_predictions["phihat"]
 
 betahats = compute_betahats(Q0_inv, Z, ghats, lambdas, phihat)
 
-# 5. Evaluate model and fairness metrics
+# Evaluate model and fairness metrics
 results = eval_model(
     data=Dtarget_test,
     protected="A",
@@ -442,5 +507,14 @@ results = eval_model(
     lambdas=lambdas
 )
 
-# Print results
 print(results)
+
+# plot_one_constraint for cFPR
+fig, axes = plot_one_constraint(
+    results=results,
+    fairness=['cFPR_diff'],   # Focus on cFPR differences
+    error='error_mse',        # Error metric: Mean squared error
+    palette='deep'            # Default Seaborn color palette
+)
+
+plt.show()
