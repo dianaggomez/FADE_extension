@@ -303,19 +303,20 @@ def eval_model(data, protected, phihat, phibarhat, base_predictions, betahats,
 
     return out
 
-
-
+#####################################################################################
+############################ End of Helper Functions ################################
+#####################################################################################
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 
 # TODO: Define the datasets for each
-
 Dlearn_train = ...
 Dlearn_test = ...
 Dnuis_train = ...
 Dnuis_test = ...
 Dtarget_test = ...
+
 # Predictors b(W)=(b1(W),b2(W),...,bk(W))b(W)=(b1​(W),b2​(W),...,bk​(W)) can include:
     # - Previously trained models (SS).
     # - Newly trained models on XX and AA.
@@ -343,7 +344,8 @@ Z = predict_basis(data=test_data, learners=learners, covariates=covariates, boun
 
 #     π(W): Propensity score learner (e.g., Logistic Regression).
 #     μ0​(W): Outcome model for untreated individuals (e.g., Random Forest).
-#     ν0(W): Squared outcome model for untreated individuals (optional; can also use ν0=μ0​ if outcomes are binary).
+#     ν0(W): Squared outcome model for untreated individuals (optional; can also use ν0=μ0​ if outcomes are binary). 
+#        NOTE: we don't need ν0(W) because Y \in {0,1}
 
 # Generate Predictions: Use predict_nuis to:
 
