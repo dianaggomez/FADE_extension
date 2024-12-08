@@ -138,3 +138,56 @@ def compute_mmd(X, Y, kernel='rbf', gamma=1.0):
         return np.mean(XX) + np.mean(YY) - 2 * np.mean(XY)
     else:
         raise ValueError("Unsupported kernel type")
+
+
+###########################################
+###### Estimate fairness properties  ######
+########## Code taken from FADE  ##########
+###########################################
+
+def independence_violation(protected_vec, pred_vec, absval=True):
+    """Difference in expected value of the predictor for the two groups"""
+    rate0 = pred_vec[protected_vec == 0].mean()
+    rate1 = pred_vec[protected_vec == 1].mean()
+    if absval:
+        diff = np.abs(rate0 - rate1)
+    else:
+        diff = rate0 - rate1
+    return diff
+
+
+def deltahatplus(protected_vec, outcome_vec, pred_vec, absval=True):
+    """Difference in generalized cFPRs for the two groups"""
+    ghat = compute_ghat_cFPR(protected_vec, outcome_vec)
+    diff = np.dot(ghat, pred_vec)/len(pred_vec)
+    if absval:
+        diff = np.abs(diff)
+
+    return diff
+
+
+def compute_ghat_cFPR(protected_vec, outcome_vec):
+    """Compute the influence function vector for the cFPR difference."""
+    group0 = (1 - outcome_vec)*(1 - protected_vec)
+    group1 = (1 - outcome_vec)*protected_vec
+    ghat = group0/np.mean(group0) - group1/np.mean(group1)
+    return ghat
+
+
+def deltahatminus(protected_vec, outcome_vec, pred_vec, absval=True):
+    """Difference in generalized cFNRs for the two groups"""
+    ghat = compute_ghat_cFNR(protected_vec, outcome_vec)
+    diff = np.dot(ghat, pred_vec)/len(pred_vec)
+    if absval:
+        diff = np.abs(diff)
+
+    return diff
+
+
+def compute_ghat_cFNR(protected_vec, outcome_vec):
+    """Compute the influence function vector for the cFNR difference."""
+    group0 = outcome_vec*(1 - protected_vec)
+    group1 = outcome_vec*protected_vec
+    ghat = group0/np.mean(group0) - group1/np.mean(group1)
+    return ghat
+
