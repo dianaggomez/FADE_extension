@@ -1,3 +1,8 @@
+"""
+References: 
+    - https://www.mathworks.com/help/risk/explore-fairness-metrics-for-credit-scoring-model.html
+    - https://aif360.readthedocs.io/en/latest/modules/sklearn.html#module-aif360.sklearn.metrics
+"""
 import numpy as np
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics.pairwise import rbf_kernel

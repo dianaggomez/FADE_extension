@@ -32,13 +32,13 @@ class Encoder(nn.Module):
 class Decoder(nn.Module):
     def __init__(self, latent_dim: int, output_dim: int, hidden_dim: int = 32) -> None:
         super().__init__()
-        self.fc1 = nn.Linear(latent_dim + 1, hidden_dim)  # Input: {H, S}
+        self.fc1 = nn.Linear(latent_dim + 1, hidden_dim)  # Input: {H, A}
         self.fc2 = nn.Linear(hidden_dim, output_dim + 1)  # Output: {X, Y}
         self.activation = nn.LeakyReLU()
     
-    def forward(self, h, s):
-        hs = torch.cat([h, s], dim=1)
-        z = self.activation(self.fc1(hs))
+    def forward(self, h, a):
+        ha = torch.cat([h, a], dim=1)
+        z = self.activation(self.fc1(ha))
         xy_recon = self.fc2(z)
         x_recon = xy_recon[:, :-1]
         y_recon = xy_recon[:, -1].unsqueeze(1)  
@@ -51,10 +51,10 @@ class VAE(nn.Module):
         self.encoder = Encoder(input_dim, latent_dim, hidden_dim)
         self.decoder = Decoder(latent_dim, input_dim, hidden_dim)
 
-    def forward(self, x, y, s):
+    def forward(self, x, y, a):
         mu, logvar = self.encoder(x, y)
         h = self.reparameterize(mu, logvar)  # sample from the latent space in a differentiable way
-        x_recon, y_recon = self.decoder(h, s)
+        x_recon, y_recon = self.decoder(h, a)
         return x_recon, y_recon, mu, logvar, h
     
     def reparameterize(self, mu, logvar):
@@ -76,7 +76,7 @@ def vae_loss(x_true, y_true, x_recon, y_recon, mu, logvar, kld_weight=1.0):
     """
     Compute the total VAE loss, which consists of two components:
         1. Reconstruction loss: Measures how well the decoder reconstructs {X,Y} from the 
-            latent embeddings H and sensitive attribute S.
+            latent embeddings H and sensitive attribute A.
         2. KL divergence: Encourages the learned latent space distribution to be close to 
             a standard normal distribution N(0,I).
     
@@ -148,9 +148,9 @@ def claire_m_loss(vae_loss, embeddings_by_group, alpha=2.0):
     
     for i in range(len(sensitive_groups)):
         for j in range(i + 1, len(sensitive_groups)):
-            s_i = sensitive_groups[i]
-            s_j = sensitive_groups[j]
-            mmd_penalty += mmd_loss(embeddings_by_group[s_i], embeddings_by_group[s_j])
+            a_i = sensitive_groups[i]
+            a_j = sensitive_groups[j]
+            mmd_penalty += mmd_loss(embeddings_by_group[a_i], embeddings_by_group[a_j])
     
     mmd_penalty /= num_pairs  # Average MMD over all pairs of sensitive groups
     
@@ -186,25 +186,25 @@ def train(model: VAE, train_dataloader: DataLoader, num_epochs: int = 100, learn
         total_loss = 0.0
         
         with tqdm(train_dataloader, unit="batches") as itr:
-            for step, (X_batch, Y_batch, S_batch) in enumerate(itr, start=step + 1):
-                X_batch, Y_batch, S_batch = \
-                    X_batch.to(device).float(), Y_batch.to(device).float(), S_batch.to(device).float()
+            for step, (X_batch, A_batch, Y_batch, D_batch) in enumerate(itr, start=step + 1):
+                X_batch, Y_batch, A_batch = \
+                    X_batch.to(device).float(), Y_batch.to(device).float(), A_batch.to(device).float()
                 
                 # Zero out the gradients before passing in a new batch
                 optimizer.zero_grad()
                 
                 # Forward pass (get reconstructed input and latent embeddings)
                 X_recon, Y_recon, mu, logvar, H_batch = \
-                    model.forward(X_batch, Y_batch, S_batch)
+                    model.forward(X_batch, Y_batch, A_batch)
                 
                 # Compute VAE loss
                 loss_vae = vae_loss(X_batch, Y_batch, X_recon, Y_recon, mu, logvar, kld_weight)
                 
-                sensitive_groups = torch.unique(S_batch)
+                sensitive_groups = torch.unique(A_batch)
                 embeddings_by_group = {}
-                for s in sensitive_groups:
-                    mask_s = (S_batch == s).nonzero(as_tuple=True)[0]
-                    embeddings_by_group[s.item()] = H_batch[mask_s]
+                for a in sensitive_groups:
+                    mask_a = (A_batch == a).nonzero(as_tuple=True)[0]
+                    embeddings_by_group[a.item()] = H_batch[mask_a]
                 
                 # Compute CLAIRE-M loss
                 loss = claire_m_loss(loss_vae, embeddings_by_group, alpha)
@@ -229,7 +229,7 @@ class CounterfactualDataGenerator:
 
         Args:
             vae: The trained VAE model with an encoder that encodes {X, Y} into latent space H 
-                and a decoder that decodes {H, S} back into {X, Y}.
+                and a decoder that decodes {H, A} back into {X, Y}.
             sensitive_groups: Unique values of the sensitive attribute.
             K: Number of samples to generate from the latent space for each instance. Defaults to 10.
         """
@@ -247,8 +247,8 @@ class CounterfactualDataGenerator:
             Y: Input labels (batch of Y values).
         
         Returns:
-            Two dictionaries (X_CF_s, Y_CF_s) containing counterfactual versions of X and Y 
-            for each sensitive group s, respectively.
+            Two dictionaries (X_CF_a, Y_CF_a) containing counterfactual versions of X and Y 
+            for each sensitive group a, respectively.
         """
         # Encode {X, Y} into latent space H using the encoder
         mu, logvar = self.vae.encoder(X.float(), Y.float())
@@ -259,31 +259,31 @@ class CounterfactualDataGenerator:
         H_samples = mu.unsqueeze(0) + eps * std.unsqueeze(0)  # shape: (K, batch_size, latent_dim)
         
         # Initialize dictionaries to store counterfactuals for each sensitive group
-        X_CF_s = {}
-        Y_CF_s = {}
+        X_CF_a = {}
+        Y_CF_a = {}
         
-        for s in self.sensitive_groups:  # for each value of the sensitive attribute  
-            S = torch.full(size=(X.shape[0], 1), fill_value=s)  # shape: (batch_size, 1)
+        for a in self.sensitive_groups:  # for each value of the sensitive attribute  
+            A = torch.full(size=(X.shape[0], 1), fill_value=a)  # shape: (batch_size, 1)
             
             # Initialize lists to store decoded outputs for K samples
             X_decoded = []
             Y_decoded = []
             
-            # Decode each sample H_k with sensitive attribute s
+            # Decode each sample H_k with sensitive attribute a
             for k in range(self.K):
                 H_k = H_samples[k]  # shape: (batch_size, latent_dim)
                 
-                # Decode {H_k, s} -> {X_k^CF, Y_k^CF}
-                X_recon, Y_recon = self.vae.decoder(H_k.float(), S.float())
+                # Decode {H_k, a} -> {X_k^CF, Y_k^CF}
+                X_recon, Y_recon = self.vae.decoder(H_k.float(), A.float())
                 
                 X_decoded.append(X_recon)
                 Y_decoded.append((torch.sigmoid(Y_recon) > 0.5).float())  # Binarize Y
             
             # Aggregate (mean) over K samples to get counterfactuals
-            X_CF_s[s] = torch.mean(torch.stack(X_decoded), dim=0).cpu().detach().numpy()
-            Y_CF_s[s] = (torch.mean(torch.stack(Y_decoded), dim=0) > 0.5).float().cpu().detach().numpy()
+            X_CF_a[a] = torch.mean(torch.stack(X_decoded), dim=0).cpu().detach().numpy()
+            Y_CF_a[a] = (torch.mean(torch.stack(Y_decoded), dim=0) > 0.5).float().cpu().detach().numpy()
 
-        return X_CF_s, Y_CF_s
+        return X_CF_a, Y_CF_a
 
 
 def to_tensor(input, device=DEVICE):
