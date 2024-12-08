@@ -233,6 +233,7 @@ def get_active(df):
     return out
 
 
+
 def eval_model(data, protected, phihat, phibarhat, base_predictions, betahats,
                unfairness='all', clip=None, lambdas=None, lambda_cols=None,
                err='all', absval=True):
@@ -377,14 +378,15 @@ from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 
 # TODO: Define the datasets for each
 Dlearn_train = ...
-Dlearn_test = ...
+Dlearn_test = ... #techinically don't have this
 Dnuis_train = ...
 Dnuis_test = ...
+Dtarget_train = ...
 Dtarget_test = ...
 
 # Predictors b(W)=(b1(W),b2(W),...,bk(W))b(W)=(b1​(W),b2​(W),...,bk​(W)) can include:
     # - Previously trained models (SS).
-    # - Newly trained models on XX and AA.
+    # - Newly trained models on X and A.
     # - Arbitrary mathematical transformations or orthogonal basis functions like polynomials or splines.
 
 learner1 = LogisticRegression()
@@ -401,9 +403,9 @@ learner2.fit(Dlearn_train[covariates], Dlearn_train[target])
 # Use them as basis learners
 learners = [learner1, learner2]
 
-# Predict basis
+# Predict basis - This for evaluating the basis and not phi(Z)
 # TODO: Is this data Dlearn???
-Z = predict_basis(data=test_data, learners=learners, covariates=covariates, bounds=(0, 1))
+Z = predict_basis(data=Dtarget_test, learners=learners, covariates=covariates, bounds=(0, 1))
 
 # Train the Nuisance Learners: Use fit_nuis to train models for:
 
@@ -420,7 +422,7 @@ Z = predict_basis(data=test_data, learners=learners, covariates=covariates, boun
 
 learner_pi = LogisticRegression()          # Propensity score learner
 learner_mu = RandomForestRegressor()       # Outcome model
-learner_nu = RandomForestRegressor()       # Squared outcome model (optional)
+learner_nu = None #RandomForestRegressor()       # Squared outcome model (optional)
 
 # Train nuisance learners
 fit_nuis(
@@ -435,7 +437,7 @@ fit_nuis(
 
 # Predict nuisance parameters on the test set
 nuisance_predictions = predict_nuis(
-    data=Dnuis_train,
+    data=Dnuis_test,
     covariates=covariates,         # Covariates (features)
     decision="D",                  # Treatment assignment (D) #TODO: rename target or keep Y
     outcome="Y",                   # Outcome variable (Y)
@@ -449,6 +451,7 @@ nuisance_predictions = predict_nuis(
 
 # View nuisance predictions
 print(nuisance_predictions.head())
+
 
 # Combine nuisance predictions and basis matrix for fairness optimization
 # Need to first get Q0, ghats. lambdas
@@ -502,7 +505,7 @@ results = eval_model(
     phibarhat="phibarhat",
     base_predictions=Z,
     betahats=betahats,
-    unfairness=["cFPR"],  # Only evaluate cFPR constraint
+    unfairness="cFPR",  # Only evaluate cFPR constraint
     err=["mse", "auc"],   # Evaluate mean squared error and AUC
     lambdas=lambdas
 )
@@ -512,7 +515,7 @@ print(results)
 # plot_one_constraint for cFPR
 fig, axes = plot_one_constraint(
     results=results,
-    fairness=['cFPR_diff'],   # Focus on cFPR differences
+    fairness='cFPR_diff',   # Focus on cFPR differences
     error='error_mse',        # Error metric: Mean squared error
     palette='deep'            # Default Seaborn color palette
 )
