@@ -92,38 +92,43 @@ def claire_vae(vae_model, dataset, sensitive_groups=[0, 1], num_samples=20,
     Args:
         vae_model: The trained VAE model
         dataset: The dataset to generate counterfactuals for
-            Will be used to generate batches of X, Y, S using a DataLoader
-            Contains attributes X_names, S_name, Y_name
+            Will be used to generate batches of X, A, Y, D using a DataLoader
+            Contains attributes X_names, A_name, Y_name, D_name
         sensitive_groups: Unique values of the sensitive attribute,
             defaults to [0, 1] for a binary sensitive attribute 
         batch_size: The batch size for inference
         device: The device to use
         
     Returns:
-        A DataFrame containing the counterfactuals with X, S, Y columns from the dataset
-        If return_original is True, also returns a DataFrame with the original data
+        A DataFrame containing the counterfactuals with X, A, Y, D columns from the dataset
     """
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, drop_last=False)
     
     vae_model.to(device)
     cf_gen = CounterfactualDataGenerator(vae_model, sensitive_groups=sensitive_groups, K=num_samples)
     
-    X_cf = {s: [] for s in sensitive_groups}
-    Y_cf = {s: [] for s in sensitive_groups}
+    X_cfs = {a: [] for a in sensitive_groups}
+    Y_orig = {a: [] for a in sensitive_groups}
+    D_orig = {a: [] for a in sensitive_groups}
     
-    for X_batch, Y_batch, S_batch in dataloader:
+    for X_batch, A_batch, Y_batch, D_batch in dataloader:
         X_cf_batch, Y_cf_batch = cf_gen.generate_counterfactuals(X_batch, Y_batch)
-        for s in sensitive_groups:
-            X_cf[s].append(X_cf_batch[s])
-            Y_cf[s].append(Y_cf_batch[s])
+        
+        for a in sensitive_groups:
+            # Only add counterfactuals for the opposite sensitive group
+            not_a_mask = (A_batch.cpu().detach().numpy() != a).flatten()   
+            X_cfs[a].append(X_cf_batch[a][not_a_mask])
+            Y_orig[a].append(Y_batch[not_a_mask])  # keep the original outcome, not reconstructed
+            D_orig[a].append(D_batch[not_a_mask])  # keep the decision
 
     # Gather the counterfactual data
     cf_df = []
-    for s in sensitive_groups:
-        sdf = pd.DataFrame(np.vstack(X_cf[s]), columns=dataset.X_names)
-        sdf[dataset.S_name] = s
-        sdf[dataset.Y_name] = np.vstack(Y_cf[s])
-        cf_df.append(sdf)
+    for a in sensitive_groups:
+        adf = pd.DataFrame(np.vstack(X_cfs[a]), columns=dataset.X_names)
+        adf[dataset.A_name] = a
+        adf[dataset.Y_name] = np.vstack(Y_orig[a])
+        adf[dataset.D_name] = np.vstack(D_orig[a])
+        cf_df.append(adf)
     
     return pd.concat(cf_df, ignore_index=True)
 
