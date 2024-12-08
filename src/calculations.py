@@ -1,5 +1,5 @@
-import pandas
-import numpy
+import pandas as pd
+import numpy as np
 
 # NOTE:  In a classification setting with Y ∈ {0,1}, we have Y2 = Y, so ν0 = μ0. 
 # For this reason there is not function for ν0
@@ -37,3 +37,4 @@ def calculate_phi(df):
     df["phi(Z)"] = ((1 - df["D"]) / (1 - df["pi(W)"])) * (df["Y"] - df["mu0(W)"]) + df["mu0(W)"]
     print(df.head())
     return df
+
