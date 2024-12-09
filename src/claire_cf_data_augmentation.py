@@ -128,7 +128,7 @@ def mmd_loss(x, y, kernel='rbf', bandwidth=1.0):
     return Kxx.mean() + Kyy.mean() - 2 * Kxy.mean()
 
 
-def claire_m_loss(vae_loss, embeddings_by_group, alpha=2.0):
+def claire_m_loss(vae_loss, sensitive_groups, embeddings_by_group, alpha=2.0):
     """
     Compute CLAIRE loss with MMD penalty for distribution matching (CLAIRE-M).
     
@@ -141,9 +141,7 @@ def claire_m_loss(vae_loss, embeddings_by_group, alpha=2.0):
     Returns:
         Total CLAIRE-M loss combining VAE loss and MMD penalty.
     """
-    mmd_penalty = 0.0
-    sensitive_groups = list(embeddings_by_group.keys())
-    
+    mmd_penalty = 0.0    
     num_pairs = len(sensitive_groups) * (len(sensitive_groups) - 1) / 2
     
     for i in range(len(sensitive_groups)):
@@ -175,6 +173,8 @@ def train(model: VAE, train_dataloader: DataLoader, num_epochs: int = 100, learn
     Returns:
         The trained VAE model.
     """
+    sensitive_groups = [0, 1]  # Binary sensitive attribute
+    
     model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
@@ -200,14 +200,13 @@ def train(model: VAE, train_dataloader: DataLoader, num_epochs: int = 100, learn
                 # Compute VAE loss
                 loss_vae = vae_loss(X_batch, Y_batch, X_recon, Y_recon, mu, logvar, kld_weight)
                 
-                sensitive_groups = torch.unique(A_batch)
                 embeddings_by_group = {}
                 for a in sensitive_groups:
                     mask_a = (A_batch == a).nonzero(as_tuple=True)[0]
-                    embeddings_by_group[a.item()] = H_batch[mask_a]
+                    embeddings_by_group[a] = H_batch[mask_a]
                 
                 # Compute CLAIRE-M loss
-                loss = claire_m_loss(loss_vae, embeddings_by_group, alpha)
+                loss = claire_m_loss(loss_vae, sensitive_groups, embeddings_by_group, alpha)
                 
                 # Backpropagation and optimization step
                 loss.backward()  # Compute gradients
