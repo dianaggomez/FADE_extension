@@ -3,6 +3,7 @@ import sys
 import torch
 import pandas as pd
 from torch.utils.data import Dataset
+from sklearn.preprocessing import StandardScaler
 
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
@@ -16,13 +17,13 @@ class IncomeDataset(Dataset):
         "validate": os.path.join(BASE_DIR, "validate.csv"),
     }
     
-    FEATURES = ["education_num", "age"]  # Define the features we want to use
+    FEATURES = ["age", "education_num"]  # Define the features we want to use
     SENSITIVE = "sex"
     TARGET = "income"
     DECISION = "loan_approved"
     
-    def __init__(self, split="train", features=None, sensitive_attribute=None, 
-                 target=None, decision_variable=None, to_tensor=True):
+    def __init__(self, split, features=None, sensitive_attribute=None, 
+                 target=None, decision_variable=None, scale=False, to_tensor=True):
         """
         Args:
             split: The dataset split, one of "train_basis", "train_betahats", "test", or "validate"
@@ -30,6 +31,7 @@ class IncomeDataset(Dataset):
             sensitive_attribute: The sensitive attribute to use as the protected class
             target: The target variable to use in the dataset
             decision_variable: The decision variable to use in the dataset
+            scale: Whether to scale the features using StandardScaler
         """
         if split not in self.PATHS:
             raise ValueError(f"Invalid split. Must be one of {list(self.PATHS.keys())}")
@@ -44,6 +46,10 @@ class IncomeDataset(Dataset):
         self.A = data[[self.A_name]].values
         self.Y = data[[self.Y_name]].values
         self.D = data[[self.D_name]].values
+        
+        if scale:
+            self.scaler = StandardScaler()
+            self.X = self.scaler.fit_transform(self.X)
         
         if to_tensor:
             self.X = torch.tensor(self.X, dtype=torch.float32)
