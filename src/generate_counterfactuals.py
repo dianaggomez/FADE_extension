@@ -85,7 +85,7 @@ def simulation(n=50000):
 
 
 def claire_vae(vae_model, dataset, sensitive_groups=[0, 1], num_samples=20,
-               batch_size=32, device=DEVICE) -> pd.DataFrame:
+               batch_size=32, device=DEVICE, keep_original_Y=False) -> pd.DataFrame:
     """
     Generate counterfactuals using a VAE trained with the CLAIRE-M loss.
     
@@ -98,6 +98,7 @@ def claire_vae(vae_model, dataset, sensitive_groups=[0, 1], num_samples=20,
             defaults to [0, 1] for a binary sensitive attribute 
         batch_size: The batch size for inference
         device: The device to use
+        keep_original_Y: Whether to keep the original outcome in the counterfactual dataset
         
     Returns:
         A DataFrame containing the counterfactuals with X, A, Y, D columns from the dataset
@@ -108,7 +109,7 @@ def claire_vae(vae_model, dataset, sensitive_groups=[0, 1], num_samples=20,
     cf_gen = CounterfactualDataGenerator(vae_model, sensitive_groups=sensitive_groups, K=num_samples)
     
     X_cfs = {a: [] for a in sensitive_groups}
-    Y_orig = {a: [] for a in sensitive_groups}
+    Y_cfs = {a: [] for a in sensitive_groups}
     D_orig = {a: [] for a in sensitive_groups}
     
     for X_batch, A_batch, Y_batch, D_batch in dataloader:
@@ -118,7 +119,11 @@ def claire_vae(vae_model, dataset, sensitive_groups=[0, 1], num_samples=20,
             # Only add counterfactuals for the opposite sensitive group
             not_a_mask = (A_batch.cpu().detach().numpy() != a).flatten()   
             X_cfs[a].append(X_cf_batch[a][not_a_mask])
-            Y_orig[a].append(Y_batch[not_a_mask])  # keep the original outcome, not reconstructed
+            if keep_original_Y:
+                Y_cfs[a].append(Y_batch[not_a_mask])  # keep the original outcome, not reconstructed
+            else:
+                Y_cfs[a].append(Y_cf_batch[a][not_a_mask])  # keep the reconstructed outcome
+                
             D_orig[a].append(D_batch[not_a_mask])  # keep the decision
 
     # Gather the counterfactual data
@@ -126,7 +131,7 @@ def claire_vae(vae_model, dataset, sensitive_groups=[0, 1], num_samples=20,
     for a in sensitive_groups:
         adf = pd.DataFrame(np.vstack(X_cfs[a]), columns=dataset.X_names)
         adf[dataset.A_name] = a
-        adf[dataset.Y_name] = np.vstack(Y_orig[a])
+        adf[dataset.Y_name] = np.vstack(Y_cfs[a])
         adf[dataset.D_name] = np.vstack(D_orig[a])
         cf_df.append(adf)
     
